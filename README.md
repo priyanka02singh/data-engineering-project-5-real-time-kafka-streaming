@@ -12,43 +12,64 @@ The pipeline is designed to mimic real-world streaming systems used in domains s
 Modern systems generate continuous streams of data such as:
 
 - financial transactions (trades, payments)
-- user activity events (clicks, views, interactions)
-- system monitoring logs
+- user activity events (clicks, purchases, views)
+- system monitoring logs (latency, errors, usage spikes)
 
 Traditional batch pipelines cannot process this data with low latency.
 
 ### This project solves:
-How to ingest high-volume event streams in real time
-How to decouple producers and consumers using Kafka
-How to process and transform streaming data continuously
-How to enable downstream analytics systems with fresh data
+- How to ingest high-throughput event streams reliably
+- How to decouple producers and consumers using Kafka
+- How to process streaming data in real time
+- How to detect anomalies and generate alerts
+- How to route processed data to downstream analytics systems
 
 ---
 
 ## 🏗️ System Architecture
 ```text
 
-Event Producer(s)
-        ↓
-Apache Kafka Cluster
-        ↓
-Kafka Topics (partitioned event streams)
-        ↓
-Consumer Applications
-        ↓
-Real-Time Processing Layer
-        ↓
-Sink / Storage Layer (Database / File System / Analytics Input)
+        ┌────────────────────┐
+        │  Event Producers   │
+        └─────────┬──────────┘
+                  │
+     ┌────────────▼──────────────────────┐
+     │        Kafka Cluster              │
+     │                                   │
+     │      raw-events-topic             │
+     │   processed-events-topic          │
+     │         alerts-topic              │
+     └─────────--──────────────────────--┘
+                  │
+     ┌────────────▼─────────────┐
+     │   Consumer Applications  │
+     │  (Stream Processors)     │
+     └────────────┬─────────────┘
+                  │
+     ┌────────────▼─────────────-┐
+     │ Real-Time Processing Layer│
+     └────────────┬────────────-─┘
+                  │
+     ┌────────────▼─────────────┐
+     │  Sink Layer              │
+     │  - PostgreSQL (analytics)│
+     │  - Parquet files (batch) │
+     └──────────────────────────┘
 
 ```
 ---
 ## 🔄 Data Flow
 1. Event producers generate structured real-time events
-2. Events are published to Kafka topics
-3. Kafka stores and distributes messages across partitions
-4. Consumer applications subscribe to topics via consumer groups
-5. Consumers process and transform streaming events in real time
-6. Processed data is stored in downstream storage for analytics or reporting
+2. Events are published to Kafka raw-events-topic
+3. Kafka distributes events across partitions for scalability
+4. Consumers subscribe via consumer groupss
+5. Stream processors transform and analyze events in real time
+6. Processed events are published to:
+     - processed-events-topic
+     - alerts-topic (if anomalies detected)
+7. Final data is stored in:
+     - PostgreSQL for analytics queries
+     - Parquet files for downstream batch processing (Project 6 integration)
    
 ---
 ## 📦 Event Schema Design
@@ -68,70 +89,83 @@ This ensures consistency across producers and consumers.
 ## 🧰 Tech Stack
 - Apache Kafka → Distributed streaming platform
 - Python → Producer & consumer implementation
-- Docker → Kafka cluster setup (if used)
+- Docker → local Kafka environment
+- PostgreSQL → structured analytics sink
+- Parquet files → batch analytics storage
 - Pandas (optional) → Lightweight stream processing
-- PostgreSQL / File sink (optional) → Persistent storage
 
 ---
 
 ## ⚙️ Key Streaming Concepts Implemented
-### 1. Producer-Consumer Decoupling
+### 1. Multi-Topic Architecture
 
-Kafka acts as a buffer between data producers and consumers, enabling scalability and fault isolation.
+The system uses multiple Kafka topics:
 
-### 2. Topic-Based Streaming
+- raw-events-topic → incoming events
+- processed-events-topic → cleaned/transformed events
+- alerts-topic → anomaly detection outputs
 
-Events are categorized into topics for logical separation of data streams.
+👉 This separates responsibilities and improves scalability.
+
+### 2. Producer-Consumer Decoupling
+
+Kafka acts as a buffer layer, allowing producers and consumers to operate independently without direct dependency.
+
+### 3. Partitioning Strategy
+Events are partitioned using keys such as:
+
+- user_id
+- event_type
+
+### Why partitioning matters:
+- Enables parallel processing
+- Maintains ordering per key
+- Improves throughput under load
 
 ### 3. Consumer Groups
 
-Multiple consumers can process data in parallel for scalability.
+Multiple consumers can process different partitions in parallel, enabling horizontal scaling.
 
 ### 4. Real-Time Processing
 
-Consumers process events as they arrive, enabling low-latency insights.
+The system performs real-time transformations such as:
 
----
-
-## 🧠 Stream Processing Logic
-
-The system performs lightweight real-time transformations such as:
-
+- 1-minute rolling window aggregation of event volume per user
 - event filtering and validation
-- aggregation of event metrics (e.g., volume, counts)
-- basic anomaly or pattern detection (if applicable)
-- structured formatting for downstream systems
+- anomaly detection (e.g., spike in event rate > threshold)
+- structured enrichment for downstream systems
 
 ---
 
-## 🔐 Reliability & Engineering Considerations
+## 🚨 Failure Handling & Reliability Design
 
-This system is designed with production-like thinking:
+This system includes production-like design considerations:
 
-- Kafka ensures durability and fault tolerance of events
-- Consumer groups allow horizontal scaling of processing
-- Offset management enables resumable processing after failure
-- Stateless consumers ensure reprocessing capability
-- Event schema design ensures data consistency
+- Retry mechanisms for failed processing
+- Dead Letter Queue (DLQ) via Kafka topic for failed events
+- Consumer lag monitoring considerations
+- Offset management for resumable processing
+- Stateless consumer design for reprocessing capability
+- Kafka durability ensures no data loss
+
+---
+
+## 🔗 Connection to Analytics Platform (Project 6)
+
+This project forms the real-time ingestion layer of a larger data platform:
+
+- Project 5 → streaming event ingestion + processing
+- Project 6 → batch analytics + data warehouse modeling
+
+Together they simulate a hybrid modern data platform (streaming + batch analytics).
 
 ---
 
 ## ⚠️ Limitations & Trade-offs 
-- No full Kafka cluster orchestration (single-node or local setup)
-- No schema registry (simplified event validation)
+- Single-node Kafka setup (no full cluster orchestration)
+- No schema registry (manual schema enforcement)
 - No enterprise-grade monitoring (Prometheus/Grafana not included)
 - Simplified stream processing logic for educational clarity
-
----
-
-## 🔗 Connection to Analytics Pipeline (Project 6)
-
-This project serves as the real-time ingestion layer for downstream analytics systems.
-
-- Project 5 → generates real-time event streams
-- Project 6 → processes batch + structured analytics data
-
-Together, they simulate a modern hybrid data platform (streaming + batch analytics).
 
 ---
 
@@ -149,19 +183,21 @@ python consumer.py
 ---
 
 ## 📊 Output Examples
-- Real-time event logs from Kafka consumers
-- Processed event streams
-- Aggregated metrics (if implemented)
-- Stored downstream datasets
+- Real-time event streams processed from Kafka
+- Aggregated rolling window metrics
+- Anomaly detection alerts (alerts topic)
+- Structured datasets stored in PostgreSQL
+- Parquet files for batch analytics pipelines
 
 ---
 
 ## 💡 Key Learnings
-- Kafka architecture and message flow
-- Producer-consumer design patterns
-- Real-time stream processing fundamentals
+- Kafka architecture and distributed messaging
+- Real-time stream processing design
+- Producer–consumer patterns at scale
+- Partitioning and parallel processing concepts
 - Event-driven system design
-- Scalable data pipeline thinking
+- Hybrid streaming + batch data platform thinking
 
 It bridges the gap between batch ETL systems and real-time event processing systems.
 
